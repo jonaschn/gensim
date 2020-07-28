@@ -374,20 +374,23 @@ class LdaModel(interfaces.TransformationABC, basemodel.BaseTopicModel):
         update_every : int, optional
             Number of documents to be iterated through for each update.
             Set to 0 for batch learning, > 1 for online iterative learning.
-        alpha : {numpy.ndarray, str}, optional
-            Can be set to an 1D array of length equal to the number of expected topics that expresses
-            our a-priori belief for each topics' probability.
+        alpha : {float, np.array, str}, optional
+            A-priori belief on topic document/probability, this can be:
+
+                * scalar for a symmetric prior over document/topic probability,
+                * vector of length num_topics to denote an asymmetric user defined probability for each topic,
             Alternatively default prior selecting strategies can be employed by supplying a string:
 
-                * 'symmetric': Default; uses a fixed symmetric prior per topic,
+                * 'symmetric': Default; uses a fixed symmetric prior of `1.0 / num_topics` ,
                 * 'asymmetric': Uses a fixed normalized asymmetric prior of `1.0 / (topic_index + sqrt(num_topics))`,
                 * 'auto': Learns an asymmetric prior from the corpus (not available if `distributed==True`).
         eta : {float, np.array, str}, optional
-            A-priori belief on word probability, this can be:
+            A-priori belief on topic/word probability, this can be:
 
                 * scalar for a symmetric prior over topic/word probability,
                 * vector of length num_words to denote an asymmetric user defined probability for each word,
                 * matrix of shape (num_topics, num_words) to assign a probability for each word-topic combination,
+                * the string 'symmetric' (default) uses a fixed symmetric prior of `1.0 / num_topics`,
                 * the string 'auto' to learn the asymmetric prior from the data.
         decay : float, optional
             A number between (0.5, 1] to weight what percentage of the previous lambda value is forgotten
