@@ -129,18 +129,22 @@ class LdaMulticore(LdaModel):
             Number of documents to be used in each training chunk.
         passes : int, optional
             Number of passes through the corpus during training.
-        alpha : {np.ndarray, str}, optional
-            Can be set to an 1D array of length equal to the number of expected topics that expresses
-            our a-priori belief for the each topics' probability.
+        alpha : {float, np.array, str}, optional
+            A-priori belief on topic document/probability, this can be:
+
+                * scalar for a symmetric prior over document/topic probability,
+                * vector of length num_topics to denote an asymmetric user defined probability for each topic,
             Alternatively default prior selecting strategies can be employed by supplying a string:
 
-                * 'asymmetric': Uses a fixed normalized asymmetric prior of `1.0 / topicno`.
+                * 'symmetric': Default; uses a fixed symmetric prior of `1.0 / num_topics` ,
+                * 'asymmetric': Uses a fixed normalized asymmetric prior of `1.0 / (topic_index + sqrt(num_topics))`,
         eta : {float, np.array, str}, optional
-            A-priori belief on word probability, this can be:
+            A-priori belief on topic/word probability, this can be:
 
                 * scalar for a symmetric prior over topic/word probability,
                 * vector of length num_words to denote an asymmetric user defined probability for each word,
                 * matrix of shape (num_topics, num_words) to assign a probability for each word-topic combination,
+                * the string 'symmetric' (default) uses a fixed symmetric prior of `1.0 / num_topics`,
                 * the string 'auto' to learn the asymmetric prior from the data.
         decay : float, optional
             A number between (0.5, 1] to weight what percentage of the previous lambda value is forgotten
@@ -174,7 +178,7 @@ class LdaMulticore(LdaModel):
         self.batch = batch
 
         if isinstance(alpha, six.string_types) and alpha == 'auto':
-            raise NotImplementedError("auto-tuning alpha not implemented in multicore LDA; use plain LdaModel.")
+            raise NotImplementedError("auto-tuning alpha not implemented in LdaMulticore; use plain LdaModel.")
 
         super(LdaMulticore, self).__init__(
             corpus=corpus, num_topics=num_topics,
