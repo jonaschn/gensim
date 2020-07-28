@@ -75,8 +75,9 @@ class LdaMallet(utils.SaveLoad, basemodel.BaseTopicModel):
     you need to install original implementation first and pass the path to binary to ``mallet_path``.
 
     """
-    def __init__(self, mallet_path, corpus=None, num_topics=100, alpha=50, id2word=None, workers=4, prefix=None,
-                 optimize_interval=0, iterations=1000, topic_threshold=0.0, random_seed=0):
+    def __init__(self, mallet_path, corpus=None, num_topics=100, alpha=None, use_symmetric_alpha=False, eta=0.01,
+                 id2word=None, workers=4, prefix=None, optimize_interval=0, iterations=1000, topic_threshold=0.0,
+                 random_seed=0):
         """
 
         Parameters
@@ -87,8 +88,15 @@ class LdaMallet(utils.SaveLoad, basemodel.BaseTopicModel):
             Collection of texts in BoW format.
         num_topics : int, optional
             Number of topics.
-        alpha : int, optional
-            Alpha parameter of LDA.
+        alpha : float, optional
+            Alpha parameter of LDA (scalar for a symmetric prior over document-topic probability).
+            Default: 5.0 / num_topics
+        use_symmetric_alpha : bool, optional
+            Only optimize the concentration parameter of the prior over document-topic distributions.
+            (This may reduce the number of very small, poorly estimated topics,
+            but may disperse common words over several topics.)
+        eta : float, optional
+            Eta parameter of LDA (scalar for a symmetric prior over topic-word probability).
         id2word : :class:`~gensim.corpora.dictionary.Dictionary`, optional
             Mapping between tokens ids and words from corpus, if not specified - will be inferred from `corpus`.
         workers : int, optional
@@ -118,7 +126,16 @@ class LdaMallet(utils.SaveLoad, basemodel.BaseTopicModel):
             raise ValueError("cannot compute LDA over an empty collection (no terms)")
         self.num_topics = num_topics
         self.topic_threshold = topic_threshold
-        self.alpha = alpha
+        if alpha is not None:
+            # Mallet's alpha parameter is the SumAlpha parameter
+            # (sum over topics of smoothing over doc-topic distributions. alpha_k = [SumAlpha] / [num topics])
+            # To keep the same interface with gensim, calculate the SumAlpha:
+            self.alpha = alpha * num_topics
+        else:
+            mallet_default_sum_alpha = 5.0
+            self.alpha = mallet_default_sum_alpha
+        self.use_symmetric_alpha = use_symmetric_alpha
+        self.eta = eta
         if prefix is None:
             rand_prefix = hex(random.randint(0, 0xffffff))[2:] + '_'
             prefix = os.path.join(tempfile.gettempdir(), rand_prefix)
@@ -270,13 +287,14 @@ class LdaMallet(utils.SaveLoad, basemodel.BaseTopicModel):
 
         """
         self.convert_input(corpus, infer=False)
-        cmd = self.mallet_path + ' train-topics --input %s --num-topics %s  --alpha %s --optimize-interval %s '\
+        cmd = self.mallet_path + ' train-topics --input %s --num-topics %s  --alpha %s  --beta %s '\
+            '--use-symmetric-alpha %s --optimize-interval %s '\
             '--num-threads %s --output-state %s --output-doc-topics %s --output-topic-keys %s '\
             '--num-iterations %s --inferencer-filename %s --doc-topics-threshold %s  --random-seed %s'
 
         cmd = cmd % (
-            self.fcorpusmallet(), self.num_topics, self.alpha, self.optimize_interval,
-            self.workers, self.fstate(), self.fdoctopics(), self.ftopickeys(), self.iterations,
+            self.fcorpusmallet(), self.num_topics, self.alpha, self.eta, self.use_symmetric_alpha,
+            self.optimize_interval, self.workers, self.fstate(), self.fdoctopics(), self.ftopickeys(), self.iterations,
             self.finferencer(), self.topic_threshold, str(self.random_seed)
         )
         # NOTE "--keep-sequence-bigrams" / "--use-ngrams true" poorer results + runs out of memory
@@ -601,7 +619,7 @@ def malletmodel2ldamodel(mallet_model, gamma_threshold=0.001, iterations=50):
     """
     model_gensim = LdaModel(
         id2word=mallet_model.id2word, num_topics=mallet_model.num_topics,
-        alpha=mallet_model.alpha, eta=0,
+        alpha=mallet_model.alpha, eta=mallet_model.eta,
         iterations=iterations,
         gamma_threshold=gamma_threshold,
         dtype=numpy.float64  # don't loose precision when converting from MALLET
