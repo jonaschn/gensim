@@ -434,7 +434,7 @@ class LdaMallet(utils.SaveLoad, basemodel.BaseTopicModel):
         else:
             num_topics = min(num_topics, self.num_topics)
             # add a little random jitter, to randomize results around the same alpha
-            sort_alpha = self.alpha + 0.0001 * numpy.random.rand(len(self.alpha))
+            sort_alpha = self.alpha + 0.0001 * numpy.random.rand(self.num_topics)
             sorted_topics = list(matutils.argsort(sort_alpha))
             chosen_topics = sorted_topics[: num_topics // 2] + sorted_topics[-num_topics // 2:]
         shown = []
