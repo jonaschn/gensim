@@ -76,8 +76,8 @@ class LdaMallet(utils.SaveLoad, basemodel.BaseTopicModel):
 
     """
     def __init__(self, mallet_path, corpus=None, num_topics=100, alpha=None, use_symmetric_alpha=False, eta=0.01,
-                 id2word=None, workers=4, prefix=None, optimize_interval=0, iterations=1000, topic_threshold=0.0,
-                 random_seed=0):
+                 id2word=None, workers=4, prefix=None, optimize_interval=0, optimize_burn_in=200, iterations=1000,
+                 topic_threshold=0.0, random_seed=0):
         """
 
         Parameters
@@ -106,8 +106,10 @@ class LdaMallet(utils.SaveLoad, basemodel.BaseTopicModel):
         optimize_interval : int, optional
             Optimize hyperparameters every `optimize_interval` iterations
             (sometimes leads to Java exception 0 to switch off hyperparameter optimization).
+        optimize_burn_in : int, optional
+            The number of iterations to run before first estimating dirichlet hyperparameters.
         iterations : int, optional
-            Number of training iterations.
+            The number of iterations of Gibbs sampling.
         topic_threshold : float, optional
             Threshold of the probability above which we consider a topic.
         random_seed: int, optional
@@ -126,14 +128,7 @@ class LdaMallet(utils.SaveLoad, basemodel.BaseTopicModel):
             raise ValueError("cannot compute LDA over an empty collection (no terms)")
         self.num_topics = num_topics
         self.topic_threshold = topic_threshold
-        if alpha is not None:
-            # Mallet's alpha parameter is the SumAlpha parameter
-            # (sum over topics of smoothing over doc-topic distributions. alpha_k = [SumAlpha] / [num topics])
-            # To keep the same interface with gensim, calculate the SumAlpha:
-            self.alpha = alpha * num_topics
-        else:
-            mallet_default_sum_alpha = 5.0
-            self.alpha = mallet_default_sum_alpha
+        self.alpha = self.init_alpha_prior(alpha)
         self.use_symmetric_alpha = use_symmetric_alpha
         self.eta = eta
         if prefix is None:
@@ -142,10 +137,19 @@ class LdaMallet(utils.SaveLoad, basemodel.BaseTopicModel):
         self.prefix = prefix
         self.workers = workers
         self.optimize_interval = optimize_interval
+        self.optimize_burn_in = optimize_burn_in
         self.iterations = iterations
         self.random_seed = random_seed
         if corpus is not None:
             self.train(corpus)
+
+    def init_alpha_prior(self, prior):
+        """
+        Initialize priors for the Dirichlet distribution.
+        """
+        prior_shape = self.num_topics
+        alpha_k = prior if prior is not None else 5.0 / prior_shape
+        return numpy.fromiter((alpha_k for i in range(prior_shape)), dtype=numpy.float64)
 
     def finferencer(self):
         """Get path to inferencer.mallet file.
@@ -288,13 +292,19 @@ class LdaMallet(utils.SaveLoad, basemodel.BaseTopicModel):
         """
         self.convert_input(corpus, infer=False)
         cmd = self.mallet_path + ' train-topics --input %s --num-topics %s  --alpha %s  --beta %s '\
-            '--use-symmetric-alpha %s --optimize-interval %s '\
+            '--use-symmetric-alpha %s --optimize-interval %s --optimize-burn-in %s '\
             '--num-threads %s --output-state %s --output-doc-topics %s --output-topic-keys %s '\
             '--num-iterations %s --inferencer-filename %s --doc-topics-threshold %s  --random-seed %s'
 
+        # Mallet's alpha parameter is the SumAlpha parameter
+        # (sum over topics of smoothing over doc-topic distributions. alpha_k = [SumAlpha] / [num topics])
+        # Convert self.alpha to Mallet's SumAlpha
+        mallet_SumAlpha = sum(self.alpha)
+
         cmd = cmd % (
-            self.fcorpusmallet(), self.num_topics, self.alpha, self.eta, self.use_symmetric_alpha,
-            self.optimize_interval, self.workers, self.fstate(), self.fdoctopics(), self.ftopickeys(), self.iterations,
+            self.fcorpusmallet(), self.num_topics, mallet_SumAlpha, self.eta, self.use_symmetric_alpha,
+            self.optimize_interval, self.optimize_burn_in, self.workers, self.fstate(), self.fdoctopics(),
+            self.ftopickeys(), self.iterations,
             self.finferencer(), self.topic_threshold, str(self.random_seed)
         )
         # NOTE "--keep-sequence-bigrams" / "--use-ngrams true" poorer results + runs out of memory
@@ -360,7 +370,7 @@ class LdaMallet(utils.SaveLoad, basemodel.BaseTopicModel):
 
         with utils.open(self.fstate(), 'rb') as fin:
             _ = next(fin)  # header
-            self.alpha = numpy.fromiter(next(fin).split()[2:], dtype=float)
+            self.alpha = numpy.fromiter(next(fin).split()[2:], dtype=numpy.float64)
             assert len(self.alpha) == self.num_topics, "mismatch between MALLET vs. requested topics"
             _ = next(fin)  # noqa:F841 beta
             for lineno, line in enumerate(fin):
@@ -406,7 +416,7 @@ class LdaMallet(utils.SaveLoad, basemodel.BaseTopicModel):
         num_words : int, optional
             Number of words.
         log : bool, optional
-            If True - write topic with logging too, used for debug proposes.
+            If True - write topic with logging too, used for debug purposes.
         formatted : bool, optional
             If `True` - return the topics as a list of strings, otherwise as lists of (weight, word) pairs.
 
