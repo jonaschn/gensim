@@ -92,11 +92,13 @@ class LdaMallet(utils.SaveLoad, basemodel.BaseTopicModel):
             Alpha parameter of LDA (scalar for a symmetric prior over document-topic probability).
             Default: 5.0 / num_topics
         use_symmetric_alpha : bool, optional
-            Only optimize the concentration parameter of the prior over document-topic distributions.
+            Only optimize the concentration parameter of the prior over topic-word distributions.
             (This may reduce the number of very small, poorly estimated topics,
             but may disperse common words over several topics.)
+            Default: False
         eta : float, optional
             Eta parameter of LDA (scalar for a symmetric prior over topic-word probability).
+            Default: 0.01
         id2word : :class:`~gensim.corpora.dictionary.Dictionary`, optional
             Mapping between tokens ids and words from corpus, if not specified - will be inferred from `corpus`.
         workers : int, optional
