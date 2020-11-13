@@ -45,15 +45,16 @@ Examples
 
 
 import logging
+import numbers
+import numpy as np
 import os
 import random
-import warnings
 import tempfile
+import six
+import warnings
 import xml.etree.ElementTree as et
 import zipfile
 from itertools import chain
-
-import numpy
 
 from gensim import utils, matutils
 from gensim.models import basemodel
@@ -75,9 +76,9 @@ class LdaMallet(utils.SaveLoad, basemodel.BaseTopicModel):
     you need to install original implementation first and pass the path to binary to ``mallet_path``.
 
     """
-    def __init__(self, mallet_path, corpus=None, num_topics=100, alpha=None, use_symmetric_alpha=False, eta=0.01,
-                 id2word=None, workers=4, prefix=None, optimize_interval=0, optimize_burn_in=200, iterations=1000,
-                 topic_threshold=0.0, random_seed=0):
+    def __init__(self, mallet_path, corpus=None, num_topics=100, id2word=None, workers=4,
+                 alpha=None, use_symmetric_alpha=False, eta=None, prefix=None, dtype=np.float64,
+                 optimize_interval=0, optimize_burn_in=200, iterations=1000, topic_threshold=0.0, random_seed=0):
         """
 
         Parameters
@@ -116,9 +117,12 @@ class LdaMallet(utils.SaveLoad, basemodel.BaseTopicModel):
             Threshold of the probability above which we consider a topic.
         random_seed: int, optional
             Random seed to ensure consistent results, if 0 - use system clock.
+        dtype : {numpy.float16, numpy.float32, numpy.float64}, optional
+            Data-type to use during calculations inside model. All inputs are also converted.
 
         """
         self.mallet_path = mallet_path
+        self.dtype = dtype
         self.id2word = id2word
         if self.id2word is None:
             logger.warning("no word id mapping provided; initializing from corpus, assuming identity")
@@ -130,9 +134,9 @@ class LdaMallet(utils.SaveLoad, basemodel.BaseTopicModel):
             raise ValueError("cannot compute LDA over an empty collection (no terms)")
         self.num_topics = num_topics
         self.topic_threshold = topic_threshold
-        self.alpha = self.init_alpha_prior(alpha)
+        self.alpha = self.init_dir_prior(alpha, 'alpha')
         self.use_symmetric_alpha = use_symmetric_alpha
-        self.eta = eta
+        self.eta = self.init_dir_prior(eta, 'eta')
         if prefix is None:
             rand_prefix = hex(random.randint(0, 0xffffff))[2:] + '_'
             prefix = os.path.join(tempfile.gettempdir(), rand_prefix)
@@ -145,13 +149,88 @@ class LdaMallet(utils.SaveLoad, basemodel.BaseTopicModel):
         if corpus is not None:
             self.train(corpus)
 
-    def init_alpha_prior(self, prior):
+    def init_dir_prior(self, prior, name):
+        """Initialize priors for the Dirichlet distribution.
+
+        Parameters
+        ----------
+        prior : {str, float}
+            A-priori belief on word probability. If `name` == 'eta' then the prior can be:
+                * scalar for a symmetric prior over topic-word distribution,
+                * 'symmetric': Uses Gensim's fixed symmetric prior per topic,
+                * 'symmetric_mallet': Uses Mallet's fixed symmetric prior per topic.
+                Mallet only supports symmetric (b)eta priors.
+                However, Mallet's symmetric (b)eta prior is tuned if hyperparameter optimization is turned on.
+                Not supported (compared to LdaModel):
+                * 1D array of length equal to num_words to denote an asymmetric user defined probability for each word,
+                * matrix of shape (num_topics, num_words) to assign a probability for each word-topic combination,
+                * 'auto': Learns an asymmetric prior from the corpus.
+
+            If `name` == 'alpha', then the prior can be:
+                * scalar for a symmetric prior over doc-topic distribution,
+                * 'symmetric': Uses Gensim's fixed symmetric prior per topic,
+                * 'symmetric_mallet': Uses Mallet's fixed symmetric prior per topic.
+                Mallet only supports the alphaSum parameter which is the sum over all doc-topic parameters.
+                However, Mallet offers following options with hyperparameter optimization turned on:
+                * 'use_symmetric_alpha=False': Learns an asymmetric prior from the data (initialized with alphaSum).
+                * 'use_symmetric_alpha=True': Learns a symmetric prior from the data (initialized with alphaSum).
+                Works only with proper settings of 'optimize_interval' and 'optimize_burn_in'.
+                Not supported (compared to LdaModel):
+                *  1D array of length equal to num_topics to denote an asymmetric user defined probability for each topic,
+                * 'asymmetric': Uses a fixed normalized asymmetric prior of `1.0 / (topic_index + sqrt(num_topics))`,
+                * 'auto': Learns an asymmetric prior from the corpus.
+        name : {'alpha', 'eta'}
+            Whether the `prior` is parameterized by the alpha vector (1 parameter per topic)
+            or by the eta (1 parameter per unique term in the vocabulary).
         """
-        Initialize priors for the Dirichlet distribution.
-        """
-        prior_shape = self.num_topics
-        alpha_k = prior if prior is not None else 5.0 / prior_shape
-        return numpy.fromiter((alpha_k for i in range(prior_shape)), dtype=numpy.float64)
+        if prior is None:
+            prior = 'symmetric_mallet'
+
+        if name == 'alpha':
+            prior_shape = self.num_topics
+        elif name == 'eta':
+            prior_shape = self.num_terms
+        else:
+            raise ValueError("'name' must be 'alpha' or 'eta'")
+
+        if isinstance(prior, six.string_types):
+            if prior == 'symmetric_mallet':
+                if name == 'alpha':
+                    scalar = 5.0 / self.num_topics
+                else:
+                    scalar = 0.01
+                logger.info("using symmetric %s at %s", name, scalar)
+                init_prior = np.fromiter((scalar for i in range(prior_shape)),
+                    dtype=self.dtype, count=prior_shape)
+            elif prior == 'symmetric':
+                logger.info("using symmetric %s at %s", name, 1.0 / self.num_topics)
+                init_prior = np.fromiter((1.0 / self.num_topics for i in range(prior_shape)),
+                    dtype=self.dtype, count=prior_shape)
+            elif prior == 'asymmetric':
+                message = "Invalid value '{}' supplied for '{}' parameter: ".format(prior, name)
+                if name == 'alpha':
+                    help_message = "Set 'optimize_interval' and 'optimize_burn_in' to learn an asymmetric prior."
+                else:
+                    help_message = "Mallet does not support asymmetric eta priors."
+                raise ValueError(message + help_message)
+            elif prior == 'auto':
+                message = "Invalid value '{}' supplied for '{}' parameter: ".format(prior, name)
+                message += "Set 'optimize_interval' and 'optimize_burn_in' to automatically learn from data.\n"
+                if name == 'alpha':
+                    help_message = "Set 'use_symmetric_alpha' accordingly if you want to learn an (a)symmetric prior."
+                else:
+                    help_message = "Mallet only supports symmetric eta priors."
+                raise ValueError(message + help_message)
+            else:
+                raise ValueError("Unable to determine proper %s value given '%s'" % (name, prior))
+        elif isinstance(prior, list) or isinstance(prior, np.ndarray):
+            raise ValueError("Mallet does not support this input format")
+        elif isinstance(prior, (np.number, numbers.Real)):
+            init_prior = np.fromiter((prior for i in range(prior_shape)), dtype=self.dtype)
+        else:
+            raise ValueError("%s must be either a np array of scalars, list of scalars, or scalar" % name)
+
+        return init_prior
 
     def finferencer(self):
         """Get path to inferencer.mallet file.
@@ -298,13 +377,13 @@ class LdaMallet(utils.SaveLoad, basemodel.BaseTopicModel):
             '--num-threads %s --output-state %s --output-doc-topics %s --output-topic-keys %s '\
             '--num-iterations %s --inferencer-filename %s --doc-topics-threshold %s  --random-seed %s'
 
-        # Mallet's alpha parameter is the SumAlpha parameter
-        # (sum over topics of smoothing over doc-topic distributions. alpha_k = [SumAlpha] / [num topics])
-        # Convert self.alpha to Mallet's SumAlpha
-        mallet_SumAlpha = sum(self.alpha)
+        # Mallet's alpha parameter is the alphaSum parameter
+        mallet_alpha_sum = sum(self.alpha)
+        # Mallet's beta parameter only supports a scalar for a symmetric prior over the topic-word distributions
+        mallet_beta = self.eta[0]
 
         cmd = cmd % (
-            self.fcorpusmallet(), self.num_topics, mallet_SumAlpha, self.eta, self.use_symmetric_alpha,
+            self.fcorpusmallet(), self.num_topics, mallet_alpha_sum, mallet_beta, self.use_symmetric_alpha,
             self.optimize_interval, self.optimize_burn_in, self.workers, self.fstate(), self.fdoctopics(),
             self.ftopickeys(), self.iterations,
             self.finferencer(), self.topic_threshold, str(self.random_seed)
@@ -364,7 +443,7 @@ class LdaMallet(utils.SaveLoad, basemodel.BaseTopicModel):
 
         """
         logger.info("loading assigned topics from %s", self.fstate())
-        word_topics = numpy.zeros((self.num_topics, self.num_terms), dtype=numpy.float64)
+        word_topics = np.zeros((self.num_topics, self.num_terms), dtype=self.dtype)
         if hasattr(self.id2word, 'token2id'):
             word2id = self.id2word.token2id
         else:
@@ -372,9 +451,12 @@ class LdaMallet(utils.SaveLoad, basemodel.BaseTopicModel):
 
         with utils.open(self.fstate(), 'rb') as fin:
             _ = next(fin)  # header
-            self.alpha = numpy.fromiter(next(fin).split()[2:], dtype=numpy.float64)
+            # line looks like "#alpha : alpha_1 alpha_2 alpha_3 ... alpha_k"
+            self.alpha = np.fromiter(next(fin).split()[2:], dtype=self.dtype)
             assert len(self.alpha) == self.num_topics, "mismatch between MALLET vs. requested topics"
-            _ = next(fin)  # noqa:F841 beta
+            assert not np.any(np.isnan(self.alpha)), "MALLET: NaN in log likelihood calculation %s" % self.alpha
+            # line looks like "#beta : beta"
+            self.eta = np.tile(np.fromiter(next(fin).split()[2:], dtype=self.dtype), self.num_terms)
             for lineno, line in enumerate(fin):
                 line = utils.to_unicode(line)
                 doc, source, pos, typeindex, token, topic = line.split(" ")
@@ -436,7 +518,7 @@ class LdaMallet(utils.SaveLoad, basemodel.BaseTopicModel):
         else:
             num_topics = min(num_topics, self.num_topics)
             # add a little random jitter, to randomize results around the same alpha
-            sort_alpha = self.alpha + 0.0001 * numpy.random.rand(self.num_topics)
+            sort_alpha = self.alpha + 0.0001 * np.random.rand(self.num_topics)
             sorted_topics = list(matutils.argsort(sort_alpha))
             chosen_topics = sorted_topics[: num_topics // 2] + sorted_topics[-num_topics // 2:]
         shown = []
@@ -634,7 +716,7 @@ def malletmodel2ldamodel(mallet_model, gamma_threshold=0.001, iterations=50):
         alpha=mallet_model.alpha, eta=mallet_model.eta,
         iterations=iterations,
         gamma_threshold=gamma_threshold,
-        dtype=numpy.float64  # don't loose precision when converting from MALLET
+        dtype=mallet_model.dtype  # don't loose precision when converting from MALLET
     )
     model_gensim.state.sstats[...] = mallet_model.wordtopics
     model_gensim.sync_state()
