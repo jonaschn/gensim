@@ -125,7 +125,7 @@ class LdaMallet(utils.SaveLoad, basemodel.BaseTopicModel):
         self.dtype = dtype
         self.id2word = id2word
         if self.id2word is None:
-            logger.warning("no word id mapping provided; initializing from corpus, assuming identity")
+            logger.warning("No word id mapping provided; initializing from corpus, assuming identity")
             self.id2word = utils.dict_from_corpus(corpus)
             self.num_terms = len(self.id2word)
         else:
@@ -144,6 +144,17 @@ class LdaMallet(utils.SaveLoad, basemodel.BaseTopicModel):
         self.workers = workers
         self.optimize_interval = optimize_interval
         self.optimize_burn_in = optimize_burn_in
+        if optimize_interval == 0:
+            logger.info("Hyperparameter optimization turned off.")
+        else:
+            if optimize_interval > 0 and iterations < optimize_burn_in:
+                message = "Hyperparameter optimization is enabled but will not be used:"
+            else:
+                message = "Using hyperparameter optimization:"
+            logger.info(message + "\noptimize_interval: %s \n"
+                                  "optimize_burn_in: %s \n"
+                                  "use_symmetric_alpha: %s",
+                        self.optimize_interval, self.optimize_burn_in, self.use_symmetric_alpha)
         self.iterations = iterations
         self.random_seed = random_seed
         if corpus is not None:
@@ -199,11 +210,9 @@ class LdaMallet(utils.SaveLoad, basemodel.BaseTopicModel):
                     scalar = 5.0 / self.num_topics
                 else:
                     scalar = 0.01
-                logger.info("using symmetric %s at %s", name, scalar)
                 init_prior = np.fromiter((scalar for i in range(prior_shape)),
                     dtype=self.dtype, count=prior_shape)
             elif prior == 'symmetric':
-                logger.info("using symmetric %s at %s", name, 1.0 / self.num_topics)
                 init_prior = np.fromiter((1.0 / self.num_topics for i in range(prior_shape)),
                     dtype=self.dtype, count=prior_shape)
             elif prior == 'asymmetric':
@@ -229,7 +238,7 @@ class LdaMallet(utils.SaveLoad, basemodel.BaseTopicModel):
             init_prior = np.fromiter((prior for i in range(prior_shape)), dtype=self.dtype)
         else:
             raise ValueError("%s must be either a np array of scalars, list of scalars, or scalar" % name)
-
+        logger.info("Starting with symmetric %s prior at %s", name, init_prior[0])
         return init_prior
 
     def finferencer(self):
@@ -345,7 +354,7 @@ class LdaMallet(utils.SaveLoad, basemodel.BaseTopicModel):
 
         """
         if serialize_corpus:
-            logger.info("serializing temporary corpus to %s", self.fcorpustxt())
+            logger.info("Serializing temporary corpus to %s", self.fcorpustxt())
             with utils.open(self.fcorpustxt(), 'wb') as fout:
                 self.corpus2mallet(corpus, fout)
 
@@ -359,7 +368,7 @@ class LdaMallet(utils.SaveLoad, basemodel.BaseTopicModel):
             cmd = cmd % (self.fcorpustxt(), self.fcorpusmallet() + '.infer')
         else:
             cmd = cmd % (self.fcorpustxt(), self.fcorpusmallet())
-        logger.info("converting temporary corpus to MALLET format with %s", cmd)
+        logger.info("Converting temporary corpus to MALLET format with %s", cmd)
         check_output(args=cmd, shell=True)
 
     def train(self, corpus):
@@ -389,7 +398,7 @@ class LdaMallet(utils.SaveLoad, basemodel.BaseTopicModel):
             self.finferencer(), self.topic_threshold, str(self.random_seed)
         )
         # NOTE "--keep-sequence-bigrams" / "--use-ngrams true" poorer results + runs out of memory
-        logger.info("training MALLET LDA with %s", cmd)
+        logger.info("Training MALLET LDA with %s", cmd)
         check_output(args=cmd, shell=True)
         self.word_topics = self.load_word_topics()
         # NOTE - we are still keeping the wordtopics variable to not break backward compatibility.
@@ -428,7 +437,7 @@ class LdaMallet(utils.SaveLoad, basemodel.BaseTopicModel):
             self.fcorpusmallet() + '.infer', self.finferencer(),
             self.fdoctopics() + '.infer', iterations, self.topic_threshold, str(self.random_seed)
         )
-        logger.info("inferring topics with MALLET LDA '%s'", cmd)
+        logger.info("Inferring topics with MALLET LDA '%s'", cmd)
         check_output(args=cmd, shell=True)
         result = list(self.read_doctopics(self.fdoctopics() + '.infer'))
         return result if is_corpus else result[0]
@@ -442,7 +451,7 @@ class LdaMallet(utils.SaveLoad, basemodel.BaseTopicModel):
             Matrix words X topics.
 
         """
-        logger.info("loading assigned topics from %s", self.fstate())
+        logger.info("Loading assigned topics from %s", self.fstate())
         word_topics = np.zeros((self.num_topics, self.num_terms), dtype=self.dtype)
         if hasattr(self.id2word, 'token2id'):
             word2id = self.id2word.token2id
@@ -455,8 +464,10 @@ class LdaMallet(utils.SaveLoad, basemodel.BaseTopicModel):
             self.alpha = np.fromiter(next(fin).split()[2:], dtype=self.dtype)
             assert len(self.alpha) == self.num_topics, "mismatch between MALLET vs. requested topics"
             assert not np.any(np.isnan(self.alpha)), "MALLET: NaN in log likelihood calculation %s" % self.alpha
+            logger.info("Finished with alpha prior at %s", self.alpha)
             # line looks like "#beta : beta"
             self.eta = np.tile(np.fromiter(next(fin).split()[2:], dtype=self.dtype), self.num_terms)
+            logger.info("Finished with symmetric eta prior at %s", self.eta[0])
             for lineno, line in enumerate(fin):
                 line = utils.to_unicode(line)
                 doc, source, pos, typeindex, token, topic = line.split(" ")
@@ -529,7 +540,7 @@ class LdaMallet(utils.SaveLoad, basemodel.BaseTopicModel):
                 topic = self.show_topic(i, topn=num_words)
             shown.append((i, topic))
             if log:
-                logger.info("topic #%i (%.3f): %s", i, self.alpha[i], topic)
+                logger.info("Topic #%i (%.3f): %s", i, self.alpha[i], topic)
         return shown
 
     def show_topic(self, topicid, topn=10, num_words=None):
