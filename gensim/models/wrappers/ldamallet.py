@@ -89,17 +89,28 @@ class LdaMallet(utils.SaveLoad, basemodel.BaseTopicModel):
             Collection of texts in BoW format.
         num_topics : int, optional
             Number of topics.
-        alpha : float, optional
-            Alpha parameter of LDA (scalar for a symmetric prior over document-topic probability).
-            Default: 5.0 / num_topics
+        alpha : {float, str}, optional
+            A-priori belief on document-topic distribution, this can be:
+                * scalar for a symmetric prior over document-topic distribution,
+                * 'symmetric_mallet': (default) Uses Mallet's fixed symmetric prior of `5.0 / num_topics`,
+                * 'symmetric': Uses Gensim's fixed symmetric prior of `1.0 / num_topics`,
+            Mallet only supports the alphaSum parameter which is the sum over all document-topic parameters.
+            However, Mallet offers following options with hyperparameter optimization turned on:
+                * 'use_symmetric_alpha=False': Learns an asymmetric prior from the data (initialized with fixed alpha).
+                * 'use_symmetric_alpha=True': Learns a symmetric prior from the data (initialized with fixed alpha).
+                Works only with proper settings of 'optimize_interval' and 'optimize_burn_in'.
         use_symmetric_alpha : bool, optional
             Only optimize the concentration parameter of the prior over topic-word distributions.
             (This may reduce the number of very small, poorly estimated topics,
             but may disperse common words over several topics.)
             Default: False
-        eta : float, optional
-            Eta parameter of LDA (scalar for a symmetric prior over topic-word probability).
-            Default: 0.01
+        eta : {float, str}, optional
+            A-priori belief on topic-word distribution, this can be:
+                * scalar for a symmetric prior over topic-word distribution,
+                * 'symmetric_mallet': (default) Uses Mallet's fixed symmetric prior of `0.01`,
+                * 'symmetric': Uses Gensim's fixed symmetric prior of `1.0 / num_topics`,
+            Mallet only supports symmetric (b)eta priors.
+            However, Mallet's symmetric (b)eta prior is tuned if hyperparameter optimization is turned on.
         id2word : :class:`~gensim.corpora.dictionary.Dictionary`, optional
             Mapping between tokens ids and words from corpus, if not specified - will be inferred from `corpus`.
         workers : int, optional
@@ -165,30 +176,30 @@ class LdaMallet(utils.SaveLoad, basemodel.BaseTopicModel):
 
         Parameters
         ----------
-        prior : {str, float}
-            A-priori belief on word probability. If `name` == 'eta' then the prior can be:
-                * scalar for a symmetric prior over topic-word distribution,
-                * 'symmetric': Uses Gensim's fixed symmetric prior per topic,
-                * 'symmetric_mallet': Uses Mallet's fixed symmetric prior per topic.
-                Mallet only supports symmetric (b)eta priors.
-                However, Mallet's symmetric (b)eta prior is tuned if hyperparameter optimization is turned on.
-                Not supported (compared to LdaModel):
-                * 1D array of length equal to num_words to denote an asymmetric user defined probability for each word,
-                * matrix of shape (num_topics, num_words) to assign a probability for each word-topic combination,
-                * 'auto': Learns an asymmetric prior from the corpus.
-
-            If `name` == 'alpha', then the prior can be:
-                * scalar for a symmetric prior over doc-topic distribution,
-                * 'symmetric': Uses Gensim's fixed symmetric prior per topic,
-                * 'symmetric_mallet': Uses Mallet's fixed symmetric prior per topic.
-                Mallet only supports the alphaSum parameter which is the sum over all doc-topic parameters.
-                However, Mallet offers following options with hyperparameter optimization turned on:
+        prior : {float, str}
+            A-priori belief on document-topic distribution. If `name` == 'alpha', then the prior can be:
+                * scalar for a symmetric prior over document-topic distribution,
+                * 'symmetric_mallet': (default) Uses Mallet's fixed symmetric prior of `5.0 / num_topics`,
+                * 'symmetric': Uses Gensim's fixed symmetric prior of `1.0 / num_topics`,
+            Mallet only supports the alphaSum parameter which is the sum over all doc-topic parameters.
+            However, Mallet offers following options with hyperparameter optimization turned on:
                 * 'use_symmetric_alpha=False': Learns an asymmetric prior from the data (initialized with alphaSum).
                 * 'use_symmetric_alpha=True': Learns a symmetric prior from the data (initialized with alphaSum).
-                Works only with proper settings of 'optimize_interval' and 'optimize_burn_in'.
-                Not supported (compared to LdaModel):
-                *  1D array of length equal to num_topics to denote an asymmetric user defined probability for each topic,
+            Works only with proper settings of 'optimize_interval' and 'optimize_burn_in'.
+            Not supported (compared to LdaModel):
+                * 1D array of length equal to num_topics to denote an asymmetric user defined prior for each topic,
                 * 'asymmetric': Uses a fixed normalized asymmetric prior of `1.0 / (topic_index + sqrt(num_topics))`,
+                * 'auto': Learns an asymmetric prior from the corpus.
+
+            A-priori belief on topic-word distribution. If `name` == 'eta' then the prior can be:
+                * scalar for a symmetric prior over topic-word distribution,
+                * 'symmetric_mallet': (default) Uses Mallet's fixed symmetric prior of `0.01`,
+                * 'symmetric': Uses Gensim's fixed symmetric prior of `1.0 / num_topics`,
+            Mallet only supports symmetric (b)eta priors.
+            However, Mallet's symmetric (b)eta prior is tuned if hyperparameter optimization is turned on.
+            Not supported (compared to LdaModel):
+                * 1D array of length equal to num_words to denote an asymmetric user defined prior for each word,
+                * matrix of shape (num_topics, num_words) to assign a probability for each word-topic combination,
                 * 'auto': Learns an asymmetric prior from the corpus.
         name : {'alpha', 'eta'}
             Whether the `prior` is parameterized by the alpha vector (1 parameter per topic)
