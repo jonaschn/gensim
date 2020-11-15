@@ -76,9 +76,9 @@ class LdaMallet(utils.SaveLoad, basemodel.BaseTopicModel):
     you need to install original implementation first and pass the path to binary to ``mallet_path``.
 
     """
-    def __init__(self, mallet_path, corpus=None, num_topics=100, id2word=None, workers=4,
-                 alpha=None, use_symmetric_alpha=False, eta=None, prefix=None, dtype=np.float64,
-                 optimize_interval=0, optimize_burn_in=200, iterations=1000, topic_threshold=0.0, random_seed=0):
+    def __init__(self, mallet_path, corpus=None, num_topics=100, id2word=None, workers=4, iterations=1000,
+                 alpha='symmetric_mallet', use_symmetric_alpha=False, eta='symmetric_mallet', optimize_interval=0,
+                 optimize_burn_in=200, topic_threshold=0.0, prefix=None, random_seed=0, dtype=np.float64):
         """
 
         Parameters
@@ -700,6 +700,19 @@ class LdaMallet(utils.SaveLoad, basemodel.BaseTopicModel):
             model.random_seed = 0
 
         return model
+
+    def __str__(self):
+        """Get a string representation of the current object.
+
+        Returns
+        -------
+        str
+            Human readable representation of the most important model parameters.
+
+        """
+        return "LdaMallet(num_terms=%s, num_topics=%s, num_iterations=%s, random_state=%s)" % (
+            self.num_terms, self.num_topics, self.iterations, self.random_seed
+        )
 
 
 def malletmodel2ldamodel(mallet_model, gamma_threshold=0.001, iterations=50):
