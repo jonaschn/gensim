@@ -42,7 +42,7 @@ class AuthorTopicTransformer(TransformerMixin, BaseEstimator):
     """Base Author Topic module, wraps :class:`~gensim.models.atmodel.AuthorTopicModel`.
 
     The model's internal workings are heavily based on  `"The Author-Topic Model for Authors and Documents",
-    Osen-Zvi et. al 2004 <https://mimno.infosci.cornell.edu/info6150/readings/398.pdf>`_.
+    Rosen-Zvi et. al 2004 <https://mimno.infosci.cornell.edu/info6150/readings/398.pdf>`_.
 
     """
     def __init__(self, num_topics=100, id2word=None, author2doc=None, doc2author=None,
@@ -74,25 +74,30 @@ class AuthorTopicTransformer(TransformerMixin, BaseEstimator):
         decay : float, optional
             A number between (0.5, 1] to weight what percentage of the previous lambda value is forgotten
             when each new document is examined. Corresponds to Kappa from `"The Author-Topic Model for Authors
-            and Documents", Osen-Zvi et. al 2004 <https://mimno.infosci.cornell.edu/info6150/readings/398.pdf>`_.
+            and Documents", Rosen-Zvi et. al 2004 <https://mimno.infosci.cornell.edu/info6150/readings/398.pdf>`_.
         offset : float, optional
             Hyper-parameter that controls how much we will slow down the first steps the first few iterations.
-            Corresponds to Tau_0 from `"The Author-Topic Model for Authors and Documents", Osen-Zvi et. al 2004
+            Corresponds to Tau_0 from `"The Author-Topic Model for Authors and Documents", Rosen-Zvi et. al 2004
             <https://mimno.infosci.cornell.edu/info6150/readings/398.pdf>`_.
-        alpha : {np.ndarray, str}, optional
-            Can be set to an 1D array of length equal to the number of expected topics that expresses
-            our a-priori belief for the each topics' probability.
+        alpha : {float, numpy.ndarray of float, list of float, str}, optional
+            A-priori belief on document-topic distribution, this can be:
+
+                * scalar for a symmetric prior over document-topic distribution,
+                * 1D array of length equal to num_topics to denote an asymmetric user defined prior for each topic.
             Alternatively default prior selecting strategies can be employed by supplying a string:
 
-                * 'asymmetric': Uses a fixed normalized asymmetric prior of `1.0 / topicno`.
-                * 'auto': Learns an asymmetric prior from the corpus.
-        eta : {float, np.array, str}, optional
-            A-priori belief on word probability, this can be:
+                * 'symmetric': (default) Uses a fixed symmetric prior of `1.0 / num_topics`,
+                * 'asymmetric': Uses a fixed normalized asymmetric prior of `1.0 / (topic_index + sqrt(num_topics))`,
+                * 'auto': Learns an asymmetric prior from the corpus (not available if `distributed==True`).
+        eta : {float, numpy.ndarray of float, list of float, str}, optional
+            A-priori belief on topic-word distribution, this can be:
 
-                * scalar for a symmetric prior over topic/word probability,
-                * vector of length num_words to denote an asymmetric user defined probability for each word,
-                * matrix of shape (num_topics, num_words) to assign a probability for each word-topic combination,
-                * the string 'auto' to learn the asymmetric prior from the data.
+                * scalar for a symmetric prior over topic-word distribution,
+                * 1D array of length equal to num_words to denote an asymmetric user defined prior for each word,
+                * matrix of shape (num_topics, num_words) to assign a probability for each word-topic combination.
+            Alternatively default prior selecting strategies can be employed by supplying a string:
+                * 'symmetric': (default) Uses a fixed symmetric prior of `1.0 / num_topics`,
+                * 'auto': Learns an asymmetric prior from the corpus.
         update_every : int, optional
             Number of mini-batches between each model update.
         eval_every : int, optional
