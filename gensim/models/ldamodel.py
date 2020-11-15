@@ -374,24 +374,25 @@ class LdaModel(interfaces.TransformationABC, basemodel.BaseTopicModel):
         update_every : int, optional
             Number of documents to be iterated through for each update.
             Set to 0 for batch learning, > 1 for online iterative learning.
-        alpha : {float, np.array, str}, optional
-            A-priori belief on topic document/probability, this can be:
+        alpha : {float, numpy.ndarray of float, list of float, str}, optional
+            A-priori belief on document-topic distribution. If `name` == 'alpha', then the prior can be:
 
-                * scalar for a symmetric prior over document/topic probability,
-                * vector of length num_topics to denote an asymmetric user defined probability for each topic,
+                * scalar for a symmetric prior over document-topic distribution,
+                * 1D array of length equal to num_topics to denote an asymmetric user defined prior for each topic.
             Alternatively default prior selecting strategies can be employed by supplying a string:
 
-                * 'symmetric': Default; uses a fixed symmetric prior of `1.0 / num_topics` ,
+                * 'symmetric': (default) Uses a fixed symmetric prior of `1.0 / num_topics`,
                 * 'asymmetric': Uses a fixed normalized asymmetric prior of `1.0 / (topic_index + sqrt(num_topics))`,
                 * 'auto': Learns an asymmetric prior from the corpus (not available if `distributed==True`).
-        eta : {float, np.array, str}, optional
-            A-priori belief on topic/word probability, this can be:
+        eta : {float, numpy.ndarray of float, list of float, str}, optional
+            A-priori belief on topic-word distribution, this can be:
 
-                * scalar for a symmetric prior over topic/word probability,
-                * vector of length num_words to denote an asymmetric user defined probability for each word,
-                * matrix of shape (num_topics, num_words) to assign a probability for each word-topic combination,
-                * the string 'symmetric' (default) uses a fixed symmetric prior of `1.0 / num_topics`,
-                * the string 'auto' to learn the asymmetric prior from the data.
+                * scalar for a symmetric prior over topic-word distribution,
+                * 1D array of length equal to num_words to denote an asymmetric user defined prior for each word,
+                * matrix of shape (num_topics, num_words) to assign a probability for each word-topic combination.
+            Alternatively default prior selecting strategies can be employed by supplying a string:
+                * 'symmetric': (default) Uses a fixed symmetric prior of `1.0 / num_topics`,
+                * 'auto': Learns an asymmetric prior from the corpus.
         decay : float, optional
             A number between (0.5, 1] to weight what percentage of the previous lambda value is forgotten
             when each new document is examined. Corresponds to Kappa from
@@ -534,19 +535,23 @@ class LdaModel(interfaces.TransformationABC, basemodel.BaseTopicModel):
 
         Parameters
         ----------
-        prior : {str, list of float, numpy.ndarray of float, float}
-            A-priori belief on word probability. If `name` == 'eta' then the prior can be:
+        prior : {float, numpy.ndarray of float, list of float, str}
+            A-priori belief on document-topic distribution. If `name` == 'alpha', then the prior can be:
 
-                * scalar for a symmetric prior over topic/word probability,
-                * vector of length num_words to denote an asymmetric user defined probability for each word,
-                * matrix of shape (num_topics, num_words) to assign a probability for each word-topic combination,
-                * the string 'auto' to learn the asymmetric prior from the data.
-
-            If `name` == 'alpha', then the prior can be:
-
-                * an 1D array of length equal to the number of expected topics,
-                * 'symmetric': Uses a fixed symmetric prior per topic,
+                * scalar for a symmetric prior over document-topic distribution,
+                * 1D array of length equal to num_topics to denote an asymmetric user defined prior for each topic.
+            Alternatively default prior selecting strategies can be employed by supplying a string:
+                * 'symmetric': (default) Uses a fixed symmetric prior of `1.0 / num_topics`,
                 * 'asymmetric': Uses a fixed normalized asymmetric prior of `1.0 / (topic_index + sqrt(num_topics))`,
+                * 'auto': Learns an asymmetric prior from the corpus (not available if `distributed==True`).
+
+            A-priori belief on topic-word distribution. If `name` == 'eta' then the prior can be:
+
+                * scalar for a symmetric prior over topic-word distribution,
+                * 1D array of length equal to num_words to denote an asymmetric user defined prior for each word,
+                * matrix of shape (num_topics, num_words) to assign a probability for each word-topic combination.
+            Alternatively default prior selecting strategies can be employed by supplying a string:
+                * 'symmetric': (default) Uses a fixed symmetric prior of `1.0 / num_topics`,
                 * 'auto': Learns an asymmetric prior from the corpus.
         name : {'alpha', 'eta'}
             Whether the `prior` is parameterized by the alpha vector (1 parameter per topic)
