@@ -375,7 +375,7 @@ class LdaModel(interfaces.TransformationABC, basemodel.BaseTopicModel):
             Number of documents to be iterated through for each update.
             Set to 0 for batch learning, > 1 for online iterative learning.
         alpha : {float, numpy.ndarray of float, list of float, str}, optional
-            A-priori belief on document-topic distribution. If `name` == 'alpha', then the prior can be:
+            A-priori belief on document-topic distribution, this can be:
 
                 * scalar for a symmetric prior over document-topic distribution,
                 * 1D array of length equal to num_topics to denote an asymmetric user defined prior for each topic.
