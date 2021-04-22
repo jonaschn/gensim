@@ -126,6 +126,7 @@ class LdaMallet(utils.SaveLoad, basemodel.BaseTopicModel):
             The number of iterations of Gibbs sampling.
         topic_threshold : float, optional
             Threshold of the probability above which we consider a topic.
+            (corresponds to MALLET's --doc-topics-threshold and gensim's minimum_probability)
         random_seed: int, optional
             Random seed to ensure consistent results, if 0 - use system clock.
         dtype : {numpy.float16, numpy.float32, numpy.float64}, optional
@@ -746,6 +747,7 @@ def malletmodel2ldamodel(mallet_model, gamma_threshold=0.001, iterations=50):
         Gensim native LDA.
 
     """
+    #TODO: Write test case that makes sure conversion to gensim model gives similar results
     model_gensim = LdaModel(
         id2word=mallet_model.id2word, num_topics=mallet_model.num_topics,
         alpha=mallet_model.alpha, eta=mallet_model.eta,
